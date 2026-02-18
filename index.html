@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Candy Function Machine - Final Master</title>
+    <style>
+        :root { --line: #333; --primary: #4A90E2; --success: #2ECC71; --accent: #F99417; --locked: #ccc; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #F8F9FA; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; user-select: none; }
+        
+        /* UI Layout */
+        #lobby { position: absolute; width: 100%; height: 100%; background: white; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: 0.5s; }
+        .step-btn { width: 320px; padding: 20px; margin: 12px; font-size: 1.2rem; border-radius: 15px; border: none; cursor: pointer; color: white; transition: 0.3s; font-weight: bold; box-shadow: 0 4px 0 rgba(0,0,0,0.1); }
+        #btn-1 { background: var(--success); }
+        #btn-2 { background: var(--locked); cursor: not-allowed; }
+        #btn-2.unlocked { background: #E67E22; cursor: pointer; }
+
+        #game-container { display: none; text-align: center; width: 100%; animation: fadeIn 0.5s; }
+        #game-area { position: relative; width: 950px; height: 550px; background: white; border-radius: 40px; box-shadow: 0 15px 50px rgba(0,0,0,0.05); margin: 0 auto; overflow: hidden; }
+
+        /* --- Machine Design (Visual Accurate) --- */
+        #machine-main { position: absolute; top: 55%; left: 55%; transform: translate(-50%, -50%); width: 480px; height: 280px; border: 6px solid var(--line); border-radius: 45px; background: white; z-index: 10; display: flex; justify-content: center; align-items: center; gap: 35px; }
+        
+        /* Open Path Masks (Removes border lines) */
+        .path-mask { position: absolute; background: white; z-index: 11; }
+        .in-mask { top: -8px; left: 60px; width: 75px; height: 16px; } /* 상단 입구 뚫기 */
+        .out-mask { bottom: -8px; right: 85px; width: 75px; height: 16px; } /* 하단 출구 뚫기 */
+
+        /* Input/Output Parallel Lines */
+        .entry-lines { position: absolute; top: -50px; left: 65px; display: flex; gap: 50px; z-index: 5; }
+        .exit-lines { position: absolute; bottom: -45px; right: 90px; display: flex; gap: 50px; z-index: 5; }
+        .pipe-stick { width: 6px; height: 50px; background: var(--line); }
+
+        /* Googly Eyes - Positioned to the Right */
+        .eyes-box { position: absolute; top: -85px; right: 50px; display: flex; gap: 20px; z-index: 20; }
+        .eye-outer { width: 80px; height: 80px; background: white; border: 5px solid var(--line); border-radius: 50%; position: relative; overflow: hidden; }
+        .pupil-inner { width: 35px; height: 35px; background: var(--line); border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+
+        /* Slot UI */
+        .slot { width: 130px; height: 170px; border: 2px solid #f0f0f0; border-radius: 25px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; }
+        .slot-val { font-size: 3.5rem; font-weight: bold; color: var(--line); pointer-events: none; }
+        .slot-tag { font-size: 0.8rem; font-weight: bold; color: #ccc; margin-bottom: 5px; }
+
+        /* Candy Elements */
+        .candy { position: absolute; width: 35px; height: 35px; border-radius: 50%; z-index: 12; }
+        .candy-in { background: #FF6B6B; border: 3px solid #C0392B; transition: 0.7s cubic-bezier(0.5, 0, 0.5, 1); }
+        .candy-out { background: #FFD93D; border: 3px solid var(--accent); transition: none; }
+        
+        #counter-display { position: absolute; bottom: 30px; right: 60px; font-size: 1.5rem; font-weight: bold; color: var(--accent); background: white; padding: 10px 25px; border: 3px solid var(--accent); border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+
+        @keyframes machineShake { 0% { transform: translate(-50%, -50%); } 50% { transform: translate(-50.5%, -49.5%); } }
+        @keyframes eyeRoll { from { transform: translate(-50%, -50%) rotate(0deg) translateX(15px) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg) translateX(15px) rotate(-360deg); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        #trophy-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.95); z-index: 200; flex-direction: column; align-items: center; justify-content: center; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+<div id="lobby">
+    <h1 style="font-size: 2.5rem;">Candy Function Machine</h1>
+    <button id="btn-1" class="step-btn" onclick="startApp(1)">Step 1: Plus & Minus</button>
+    <button id="btn-2" class="step-btn" onclick="startApp(2)">Step 2: Multi & Div <span id="lock-text">🔒</span></button>
+</div>
+
+<div id="game-container">
+    <div style="position:absolute; top:25px; right:40px; font-weight:bold; color:var(--success);">Solved: <span id="solve-count">0</span> / 10</div>
+    <button style="position:absolute; top:25px; left:25px; padding:10px 20px; border-radius:12px; border:1px solid #ddd; cursor:pointer;" onclick="location.reload()">⬅ Menu</button>
+    
+    <div id="game-area">
+        <div id="input-box" style="position:absolute; left:70px; top:50%; transform:translateY(-50%);">
+            <div class="slot-tag">INPUT</div>
+            <div class="slot" style="border: 4px solid var(--primary); color: var(--primary);" onclick="adjustIn(1)" oncontextmenu="adjustIn(-1)">
+                <div id="display-in" class="slot-val">1</div>
+            </div>
+        </div>
+
+        <div id="machine-main">
+            <div class="path-mask in-mask"></div> <div class="path-mask out-mask"></div> <div class="entry-lines">
+                <div class="pipe-stick"></div>
+                <div class="pipe-stick"></div>
+            </div>
+            <div class="eyes-box">
+                <div class="eye-outer"><div class="pupil-inner"></div></div>
+                <div class="eye-outer"><div class="pupil-inner"></div></div>
+            </div>
+            <div class="slot" onclick="adjustOp()">
+                <div class="slot-tag">RULE</div>
+                <div id="display-op" class="slot-val">?</div>
+            </div>
+            <div class="slot" onclick="adjustNum(1)" oncontextmenu="adjustNum(-1)">
+                <div class="slot-tag">VALUE</div>
+                <div id="display-num" class="slot-val">?</div>
+            </div>
+            <div class="exit-lines">
+                <div class="pipe-stick"></div>
+                <div class="pipe-stick"></div>
+            </div>
+        </div>
+
+        <div id="counter-display">🍬 <span id="display-out">0</span></div>
+    </div>
+
+    <div style="margin: 30px auto; display: flex; gap: 20px; width: 640px;">
+        <button class="step-btn" style="background: var(--primary); flex:1;" onclick="runProcess(false)">🧪 TEST</button>
+        <button class="step-btn" style="background: var(--success); flex:1;" onclick="runProcess(true)">🎯 GUESS</button>
+    </div>
+</div>
+
+<div id="trophy-overlay">
+    <div style="font-size: 10rem;">🏆</div>
+    <h1 style="color: var(--accent); font-size: 3.5rem;">LEVEL CLEAR!</h1>
+    <button class="step-btn" style="background: var(--primary);" onclick="location.reload()">Great!</button>
+</div>
+
+<script>
+    let currentStep = 1, currentIn = 1, secretOp, secretNum, userOp = '?', userNum = 0, active = false, solveCount = 0;
+    let audioCtx = null;
+
+    function initAudio() { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    function playSound(f, t, d, v) { 
+        if(!audioCtx) return; 
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime);
+        g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d);
+        o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d);
+    }
+
+    if(localStorage.getItem('step2Unlocked') === 'true') {
+        const b = document.getElementById('btn-2'); b.classList.add('unlocked');
+        document.getElementById('lock-text').innerText = "🔓";
+    }
+
+    document.addEventListener('mousemove', (e) => {
+        if(active) return;
+        const pupils = document.querySelectorAll('.pupil-inner');
+        pupils.forEach(p => {
+            const r = p.parentElement.getBoundingClientRect();
+            const center = { x: r.left + r.width/2, y: r.top + r.height/2 };
+            const angle = Math.atan2(e.clientY - center.y, e.clientX - center.x);
+            const dist = Math.min(20, Math.hypot(e.clientX - center.x, e.clientY - center.y) / 12);
+            p.style.transform = `translate(calc(-50% + ${Math.cos(angle)*dist}px), calc(-50% + ${Math.sin(angle)*dist}px))`;
+        });
+    });
+
+    function startApp(step) {
+        if(step === 2 && localStorage.getItem('step2Unlocked') !== 'true') return alert("Solve 10 in Step 1!");
+        initAudio(); currentStep = step;
+        document.getElementById('lobby').style.display = 'none';
+        document.getElementById('game-container').style.display = 'block';
+        initGame();
+    }
+
+    function initGame() {
+        active = false; userOp = '?'; userNum = 0;
+        document.querySelectorAll('.pupil-inner').forEach(p => p.style.animation = 'none');
+        if(currentStep === 1) { secretOp = Math.random() > 0.5 ? '+' : '-'; secretNum = Math.floor(Math.random()*4)+1; currentIn = secretOp==='-' ? 5 : 1; }
+        else { secretOp = Math.random() > 0.5 ? '*' : '/'; secretNum = 2; currentIn = secretOp==='/' ? 4 : 2; }
+        document.getElementById('display-in').innerText = currentIn;
+        document.getElementById('display-op').innerText = '?';
+        document.getElementById('display-num').innerText = '?';
+        document.getElementById('display-out').innerText = '0';
+        document.getElementById('solve-count').innerText = solveCount;
+    }
+
+    function adjustIn(v) { if(active) return; currentIn = Math.max(1, Math.min(10, currentIn + v)); document.getElementById('display-in').innerText = currentIn; playSound(300, 'sine', 0.1, 0.1); }
+    function adjustOp() { if(active) return; const ops = currentStep===1 ? ['+','-'] : ['*','/']; userOp = userOp === ops[0] ? ops[1] : ops[0]; document.getElementById('display-op').innerText = userOp==='*'?'×':(userOp==='/'?'÷':userOp); playSound(400, 'square', 0.1, 0.1); }
+    function adjustNum(v) { if(active) return; userNum = Math.max(0, Math.min(9, userNum + v)); document.getElementById('display-num').innerText = userNum; playSound(500, 'square', 0.1, 0.1); }
+
+    async function runProcess(isGuess) {
+        if(active) return;
+        if(secretOp === '-' && currentIn < secretNum) return alert("Not enough candy!");
+        if(secretOp === '/' && currentIn % secretNum !== 0) return alert("Use even numbers!");
+
+        active = true;
+        document.getElementById('display-out').innerText = '0';
+        const result = Math.floor(eval(`${currentIn}${secretOp}${secretNum}`));
+        const machine = document.getElementById('machine-main');
+        const pupils = document.querySelectorAll('.pupil-inner');
+
+        // 1. Candy In (To Parallel Entry Pipes)
+        for(let i=0; i<currentIn; i++) {
+            const c = document.createElement('div'); c.className = 'candy candy-in';
+            c.style.left = '100px'; c.style.top = '250px';
+            document.getElementById('game-area').appendChild(c);
+            playSound(200 + (i*30), 'sine', 0.15, 0.1);
+            setTimeout(() => {
+                c.style.left = (machine.offsetLeft - 150) + 'px'; // 상단 입구 중앙으로 이동
+                c.style.top = (machine.offsetTop - 190) + 'px';
+                c.style.opacity = '0';
+            }, 50);
+            await new Promise(r => setTimeout(r, 400));
+        }
+
+        // 2. Machine Work
+        machine.classList.add('shaking');
+        pupils.forEach(p => p.style.animation = 'eyeRoll 0.3s infinite linear');
+        playSound(120, 'sawtooth', 1.0, 0.05);
+        await new Promise(r => setTimeout(r, 1000));
+        machine.classList.remove('shaking');
+        pupils.forEach(p => p.style.animation = 'none');
+
+        // 3. Candy Out
+        for(let i=0; i<result; i++) {
+            const c = document.createElement('div'); c.className = 'candy candy-out';
+            const startX = machine.offsetLeft + 140; 
+            const startY = machine.offsetTop + 130;
+            c.style.left = startX + 'px'; c.style.top = startY + 'px';
+            document.getElementById('game-area').appendChild(c);
+            document.getElementById('display-out').innerText = i + 1;
+            playSound(700 + (i*40), 'triangle', 0.2, 0.1);
+
+            let x = startX, y = startY, vy = -3, vx = (Math.random()-0.5)*10;
+            const drop = setInterval(() => {
+                x += vx; y += vy; vy += 0.6;
+                c.style.left = x+'px'; c.style.top = y+'px';
+                if(y > 600) { clearInterval(drop); c.remove(); }
+            }, 20);
+            await new Promise(r => setTimeout(r, 300));
+        }
+
+        active = false;
+        if(isGuess) {
+            if(userOp === secretOp && userNum === secretNum) {
+                solveCount++;
+                playSound(800, 'sine', 0.4, 0.2); playSound(1100, 'sine', 0.5, 0.2);
+                if(solveCount >= 10) {
+                    if(currentStep === 1) localStorage.setItem('step2Unlocked', 'true');
+                    document.getElementById('trophy-overlay').style.display = 'flex';
+                } else { alert("🎯 CORRECT!"); initGame(); }
+            } else { playSound(100, 'square', 0.4, 0.2); alert("❌ Try again!"); }
+        }
+    }
+</script>
+</body>
+</html>
